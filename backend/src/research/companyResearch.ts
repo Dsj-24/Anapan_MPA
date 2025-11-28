@@ -1,0 +1,62 @@
+import type { Prospect } from "../prospect/types.js";
+import { classifyCompany } from "./classifyCompany.js";
+import { tavilySearch } from "./tavilyClient.js";
+
+export type CompanyResearch = {
+  companyFound: boolean;
+  name?: string;
+  industry?: string;
+  sizeGuess?: "enterprise" | "midmarket" | "startup";
+  keySnippets: string[];
+};
+
+export async function researchCompany(
+  prospect: Prospect
+): Promise<CompanyResearch> {
+  const base =
+    prospect.companyNameGuess || prospect.emailDomain?.split(".")[0];
+  if (!base) {
+    return { companyFound: false, keySnippets: [] };
+  }
+
+  const queries = [
+    `"${base}" company "about us"`,
+    `"${base}" marketing "loyalty program"`,
+    `"${base}" "digital marketing" campaigns`,
+  ];
+
+  const snippets: string[] = [];
+  for (const q of queries) {
+    const results = await tavilySearch(q, { maxResults: 5 });
+    for (const r of results) {
+      const content = r.content;
+      if (!content) continue;
+      snippets.push(content.slice(0, 600));
+      if (snippets.length >= 5) break;
+    }
+    if (snippets.length >= 5) break;
+  }
+
+  if (!snippets.length) {
+    return { companyFound: false, keySnippets: [] };
+  }
+
+  const classification = await classifyCompany(snippets.slice(0, 3));
+
+  const response= {
+    companyFound: true,
+    name: classification.name ?? prospect.companyNameGuess,
+    industry: classification.industry,
+    sizeGuess: classification.sizeGuess,
+    keySnippets: snippets.slice(0, 3),
+  };
+
+  // Ensure full type compliance with CompanyResearch and fix 'sizeGuess' undefined issue
+  return {
+    companyFound: true,
+    name: response.name ?? "",
+    industry: response.industry ?? "",
+    sizeGuess: response.sizeGuess ?? "midmarket",
+    keySnippets: response.keySnippets,
+  };
+}
