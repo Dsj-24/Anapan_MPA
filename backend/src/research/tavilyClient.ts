@@ -11,6 +11,8 @@ export async function tavilySearch(
   query: string,
   options: { maxResults?: number } = {}
 ): Promise<TavilyResult[]> {
+  console.log("[Tavily] query:", query);
+
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -30,6 +32,11 @@ export async function tavilySearch(
 
   const data: any = await res.json();
   const results: any[] = data.results ?? [];
+
+  console.log(
+    "[Tavily] results:",
+    results.slice(0, 3).map((r: any) => ({ title: r.title, url: r.url }))
+  );
 
   return results.map((r) => ({
     title: r.title ?? "",

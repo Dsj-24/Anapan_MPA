@@ -18,6 +18,69 @@ const MeetingPrepSchema = z.object({
 
 export type MeetingPrep = z.infer<typeof MeetingPrepSchema>;
 
+function parseJsonSafely(raw: string): any {
+  let txt = raw.trim();
+
+  // Strip ```json ... ``` fences if the model added them
+  if (txt.startsWith("```")) {
+    txt = txt.replace(/^```[a-zA-Z]*\s*/, ""); // remove opening fence + optional lang
+    txt = txt.replace(/```$/, ""); // remove closing fence
+  }
+
+  try {
+    return JSON.parse(txt);
+  } catch (e) {
+    console.error("Failed to parse LLM JSON:", e);
+    return {};
+  }
+}
+
+// Turn arrays of strings OR objects into "Heading: detail" strings
+function normSection(val: any): string[] {
+  if (!Array.isArray(val)) return [];
+
+  return val
+    .map((item) => {
+      if (typeof item === "string") return item;
+
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>;
+
+        // Case 1: { title, detail }
+        const titleField = obj.title;
+        const detailField = obj.detail;
+        const hasTitleField =
+          typeof titleField === "string" && titleField.trim().length > 0;
+        const hasDetailField =
+          typeof detailField === "string" && detailField.trim().length > 0;
+
+        if (hasTitleField || hasDetailField) {
+          const title = hasTitleField ? (titleField as string).trim() : "";
+          const detail = hasDetailField ? (detailField as string).trim() : "";
+          if (title && detail) return `${title}: ${detail}`;
+          if (title) return title;
+          if (detail) return detail;
+        }
+
+        // Case 2: { "Heading": "detail" } – first key/value pair
+        const entries = Object.entries(obj);
+        const firstEntry = entries[0] as [string, unknown] | undefined;
+
+        if (firstEntry) {
+          const [key, value] = firstEntry;
+          const title = String(key).trim();
+          const detail = String(value ?? "").trim();
+          if (title && detail) return `${title}: ${detail}`;
+          if (title) return title;
+          if (detail) return detail;
+        }
+      }
+
+      return "";
+    })
+    .filter((s) => s.trim().length > 0);
+}
+
 export async function generateMeetingPrep(
   context: ResearchContext
 ): Promise<MeetingPrep> {
@@ -33,6 +96,33 @@ export async function generateMeetingPrep(
       ? response.content
       : JSON.stringify(response.content);
 
-  const parsed = JSON.parse(raw as string);
-  return MeetingPrepSchema.parse(parsed);
+  console.log("[LLM raw meeting prep]:", raw);
+
+  const parsed: any = parseJsonSafely(raw);
+
+  const safe = {
+    header: {
+      name:
+        parsed?.header?.name ??
+        context.prospect.fullName ??
+        "Unknown prospect",
+      roleLine:
+        parsed?.header?.roleLine ??
+        context.prospect.roleGuess ??
+        "Marketing Leader, " + (context.company.name || "Customer"),
+      company:
+        parsed?.header?.company ??
+        context.company.name ??
+        context.prospect.companyNameGuess ??
+        "Customer",
+    },
+    painPoints: normSection(parsed?.painPoints),
+    talkingPoints: normSection(parsed?.talkingPoints),
+    approach: normSection(parsed?.approach),
+    tips: normSection(parsed?.tips),
+    toneSummary:
+      typeof parsed?.toneSummary === "string" ? parsed.toneSummary : "",
+  };
+
+  return MeetingPrepSchema.parse(safe);
 }

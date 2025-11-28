@@ -29,21 +29,27 @@ Rules:
 - If person.personFound is false, do not invent specific employers or locations; reason at persona/role level only.
 - If company.companyFound is false, treat as a generic company in the guessed industry; no invented campaigns or product names.
 - Focus on business outcomes and Salesforce-style value propositions (loyalty, engagement, ROI, orchestration, personalization).
-- Output must be valid JSON only with this structure:
 
-Header object:
-- header.name: string
-- header.roleLine: string
-- header.company: string
+Output format:
+- Respond with a single JSON object only.
+- The JSON must have:
+  - header: object with fields:
+    - name: string (prospect name)
+    - roleLine: string (e.g. "Chief Marketing Officer, Walmart")
+    - company: string (company name)
+  - painPoints: array of strings (these are the most important part in the output)
+  - talkingPoints: array of strings (these are the most important part in the output)
+  - approach: array of strings (these are the most important part in the output)
+  - tips: array of strings (these are the most important part in the output)
+  - toneSummary: string
 
-Arrays of strings:
-- painPoints
-- talkingPoints
-- approach
-- tips
-
-Single string:
-- toneSummary
+Content style for arrays:
+- For every item in painPoints, talkingPoints, approach and tips:
+  - Format as "<short heading>: <detail sentence(s)>".
+  - Do NOT include the literal word "Heading" anywhere.
+  - The text before the first colon is the heading (3–7 words, no period).
+  - The text after the colon must be 1–3 full sentences expanding on that heading.
+- Aim for 4–6 items in each array, grounded in the research context plus your generic patterns.
 `,
   ],
   [

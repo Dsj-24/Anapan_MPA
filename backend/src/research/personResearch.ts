@@ -16,15 +16,28 @@ export type PersonResearch = {
 export async function researchPerson(
   prospect: Prospect
 ): Promise<PersonResearch> {
-  if (!prospect.fullName || !prospect.companyNameGuess) {
+  if (!prospect.fullName) {
     return { personFound: false, sources: [] };
   }
 
-  const queries: string[] = [
-    `"${prospect.fullName}" "${prospect.companyNameGuess}" marketing`,
-  ];
+  const queries: string[] = [];
+
+  if (prospect.companyNameGuess) {
+    queries.push(
+      `"${prospect.fullName}" "${prospect.companyNameGuess}" marketing`
+    );
+  }
+
   if (prospect.emailDomain) {
     queries.push(`"${prospect.fullName}" "${prospect.emailDomain}"`);
+  }
+
+  if (prospect.email) {
+    queries.push(`"${prospect.email}"`);
+  }
+
+  if (queries.length === 0) {
+    queries.push(`"${prospect.fullName}" marketing`);
   }
 
   const sources: PersonResearchSource[] = [];

@@ -2,6 +2,8 @@ import type { Prospect } from "../prospect/types.js";
 import { classifyCompany } from "./classifyCompany.js";
 import { tavilySearch } from "./tavilyClient.js";
 
+const EMAIL_PROVIDERS = ["gmail", "yahoo", "hotmail", "outlook", "proton"];
+
 export type CompanyResearch = {
   companyFound: boolean;
   name?: string;
@@ -13,8 +15,15 @@ export type CompanyResearch = {
 export async function researchCompany(
   prospect: Prospect
 ): Promise<CompanyResearch> {
-  const base =
-    prospect.companyNameGuess || prospect.emailDomain?.split(".")[0];
+  let base = prospect.companyNameGuess;
+
+  if (!base && prospect.emailDomain) {
+    const [first] = prospect.emailDomain.split(".");
+    if (first && !EMAIL_PROVIDERS.includes(first.toLowerCase())) {
+      base = first;
+    }
+  }
+
   if (!base) {
     return { companyFound: false, keySnippets: [] };
   }
@@ -42,7 +51,7 @@ export async function researchCompany(
   }
 
   const classification = await classifyCompany(snippets.slice(0, 3));
-
+  
   const response= {
     companyFound: true,
     name: classification.name ?? prospect.companyNameGuess,
@@ -59,4 +68,8 @@ export async function researchCompany(
     sizeGuess: response.sizeGuess ?? "midmarket",
     keySnippets: response.keySnippets,
   };
+
 }
+
+
+

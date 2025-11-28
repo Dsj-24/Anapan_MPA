@@ -8,6 +8,7 @@ const required = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_REFRESH_TOKEN",
+
 ] as const;
 
 
@@ -26,3 +27,4 @@ export const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN!;
 export const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN || "http://localhost:3001";
 export const PORT = Number(process.env.PORT ?? 3001);
+export const DATABASE_URL=process.env.DATABASE_URL!;
