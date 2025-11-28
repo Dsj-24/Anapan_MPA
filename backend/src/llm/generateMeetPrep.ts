@@ -100,16 +100,19 @@ export async function generateMeetingPrep(
 
   const parsed: any = parseJsonSafely(raw);
 
+  const bucket = context.prospect.roleGuess; // expected one of your 6 uppercase categories
+
   const safe = {
     header: {
       name:
         parsed?.header?.name ??
         context.prospect.fullName ??
         "Unknown prospect",
+      // force bucket first; fall back to model only if bucket missing
       roleLine:
+        bucket ??
         parsed?.header?.roleLine ??
-        context.prospect.roleGuess ??
-        "Marketing Leader, " + (context.company.name || "Customer"),
+        "MARKETING LEADER",
       company:
         parsed?.header?.company ??
         context.company.name ??

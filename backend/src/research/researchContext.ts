@@ -22,15 +22,15 @@ export async function buildResearchContext(
   // 2) Infer company from person (as before)
   const inferredCompany = inferCompanyFromPerson(person);
   console.log("Inferred company from person:", inferredCompany);
-
-  const { rawRole, isAcceptable } = await inferRoleFromPerson(person);
-  console.log("Inferred role from person:", rawRole, "acceptable:", isAcceptable);
+  const { rawRole, roleCategory, isAcceptable } = await inferRoleFromPerson(person);
+  console.log("Inferred role from person:", rawRole, "bucket:", roleCategory, "acceptable:", isAcceptable);
   
   const enrichedProspect: Prospect = {
     ...prospect,
     companyNameGuess: inferredCompany ?? prospect.companyNameGuess,
-    roleGuess: rawRole ?? prospect.roleGuess,
+    roleGuess: roleCategory ?? rawRole ?? prospect.roleGuess,
   };
+  
   
   const company = await researchCompany(enrichedProspect);
   
