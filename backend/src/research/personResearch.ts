@@ -1,5 +1,7 @@
 import type { Prospect } from "../prospect/types.js";
 import { tavilySearch } from "./tavilyClient.js";
+import { ChatOpenAI } from "@langchain/openai";
+import { OPENAI_API_KEY } from "../config/env.js";
 
 export type PersonResearchSource = {
   url: string;
@@ -10,8 +12,83 @@ export type PersonResearchSource = {
 
 export type PersonResearch = {
   personFound: boolean;
+  fullName?: string;
+  primaryTitle?: string;
+  primaryCompany?: string;
+  seniority?: "CLEVEL" | "VP" | "DIRECTOR" | "MANAGER" | "IC";
+  location?: string;
+  keywords?: string[];
+  linkedinUrl?: string;
+  bioSummary?: string;
   sources: PersonResearchSource[];
 };
+
+const personaModel = new ChatOpenAI({
+  apiKey: OPENAI_API_KEY,
+  modelName: "gpt-4o-mini",
+  temperature: 0,
+});
+
+async function summarizePersona(
+  fullName: string,
+  sources: PersonResearchSource[]
+): Promise<Omit<PersonResearch, "personFound" | "sources">> {
+  if (!sources.length) return { fullName };
+
+  const snippets = sources
+    .map((s, i) => `Source ${i + 1} (URL: ${s.url}):\n${s.snippet}`)
+    .join("\n\n");
+
+  const response = await personaModel.invoke([
+    {
+      role: "system",
+      content: `
+You are summarizing a marketing or sales leader's public profile from web snippets.
+
+Rules:
+- Use ONLY information present in the snippets.
+- If something is unclear, omit it (do NOT guess or hallucinate).
+- Focus on role, seniority, company, location, and key themes.
+
+Return JSON only in this shape:
+{
+  "primaryTitle": string | null,
+  "primaryCompany": string | null,
+  "seniority": "CLEVEL" | "VP" | "DIRECTOR" | "MANAGER" | "IC" | null,
+  "location": string | null,
+  "keywords": string[],
+  "linkedinUrl": string | null,
+  "bioSummary": string | null
+}
+`,
+    },
+    {
+      role: "user",
+      content: `Person name: ${fullName}\n\nSnippets:\n\n${snippets}`,
+    },
+  ]);
+
+  const raw =
+    typeof response.content === "string"
+      ? response.content
+      : JSON.stringify(response.content);
+
+  try {
+    const parsed = JSON.parse(raw as string);
+    return {
+      fullName,
+      primaryTitle: parsed.primaryTitle ?? null,
+      primaryCompany: parsed.primaryCompany ?? null,
+      seniority: parsed.seniority ?? null,
+      location: parsed.location ?? null,
+      keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+      linkedinUrl: parsed.linkedinUrl ?? null,
+      bioSummary: parsed.bioSummary ?? null,
+    };
+  } catch {
+    return { fullName };
+  }
+}
 
 export async function researchPerson(
   prospect: Prospect
@@ -34,7 +111,7 @@ export async function researchPerson(
     queries.push(`"${fullName}" "${emailDomain}"`);
   }
 
-  // Try to lean on LinkedIn / leadership profiles
+  // Bias toward LinkedIn / leadership profiles
   queries.push(`"${fullName}" linkedin marketing`);
   queries.push(`"${fullName}" leadership marketing`);
 
@@ -55,10 +132,8 @@ export async function researchPerson(
       const nameMatches = lowerText.includes(fullName.toLowerCase());
       if (!nameMatches) continue;
 
-      // If we know a company or domain, prefer snippets that mention them.
       if (company && !lowerText.includes(company.toLowerCase())) {
         if (emailDomain && !lowerText.includes(emailDomain.toLowerCase())) {
-          // company & domain both missing in text -> lower priority: skip here
           continue;
         }
       }
@@ -70,7 +145,6 @@ export async function researchPerson(
     }
   }
 
-  // De‑duplicate by URL and prioritize LinkedIn / corporate URLs first
   const unique = sources.filter(
     (s, i, arr) => arr.findIndex((t) => t.url === s.url) === i
   );
@@ -90,9 +164,15 @@ export async function researchPerson(
   });
 
   const personFound = unique.length > 0;
+  if (!personFound) {
+    return { personFound: false, sources: [] };
+  }
+
+  const persona = await summarizePersona(fullName, unique.slice(0, 5));
 
   return {
     personFound,
+    ...persona,
     sources: unique.slice(0, 5),
   };
 }

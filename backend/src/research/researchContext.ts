@@ -16,24 +16,32 @@ export type ResearchContext = {
 export async function buildResearchContext(
   prospect: Prospect
 ): Promise<ResearchContext> {
-  // 1) Person research first
   const person = await researchPerson(prospect);
 
-  // 2) Infer company from person (as before)
   const inferredCompany = inferCompanyFromPerson(person);
   console.log("Inferred company from person:", inferredCompany);
-  const { rawRole, roleCategory, isAcceptable } = await inferRoleFromPerson(person);
-  console.log("Inferred role from person:", rawRole, "bucket:", roleCategory, "acceptable:", isAcceptable);
-  
+
+  const { rawRole, roleCategory, isAcceptable } = await inferRoleFromPerson(
+    person
+  );
+  console.log(
+    "Inferred role from person:",
+    rawRole,
+    "bucket:",
+    roleCategory,
+    "acceptable:",
+    isAcceptable
+  );
+
   const enrichedProspect: Prospect = {
     ...prospect,
     companyNameGuess: inferredCompany ?? prospect.companyNameGuess,
+    // prefer bucket; fall back to raw role; then any previous guess
     roleGuess: roleCategory ?? rawRole ?? prospect.roleGuess,
   };
-  
-  
+
   const company = await researchCompany(enrichedProspect);
-  
+
   return {
     prospect: enrichedProspect,
     person,

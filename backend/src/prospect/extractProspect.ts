@@ -1,97 +1,133 @@
+// backend/src/prospect/extractProspect.ts
 import type { calendar_v3 } from "googleapis";
 import type { Prospect } from "./types.js";
 
-const SELF_EMAIL = "diveshjamwal.dsj@gmail.com"; // later from env
+const PERSONAL_DOMAINS = new Set([
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "icloud.com",
+]);
 
-const EMAIL_PROVIDERS = ["gmail", "yahoo", "hotmail", "outlook", "proton"];
+function cleanName(identifier?: string | null): string | undefined {
+  if (!identifier) return undefined;
 
-// Prefer a capitalized token in the meeting title, e.g. "Flexiple" in "Flexiple Sales Meeting"
-function guessCompanyFromTitle(title: string): string | undefined {
-  const stopWords = new Set([
-    "meeting",
-    "sales",
-    "call",
-    "intro",
-    "sync",
-    "catch",
-    "up",
-    "review",
-    "demo",
-    "with",
-    "for",
-    "x",
-    "vs",
-  ]);
-
-  const tokens = title
-    .replace(/[^A-Za-z0-9 ]+/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-
-  for (const token of tokens) {
-    const lower = token.toLowerCase();
-    if (stopWords.has(lower)) continue;
-    if (/^[A-Z]/.test(token)) {
-      return token;
-    }
+  // If it already looks like "First Last" with capitals, keep it
+  if (identifier.includes(" ") && /[A-Z]/.test(identifier)) {
+    return identifier.trim();
   }
+
+  // Strip email domain if present
+  const base = identifier.includes("@")
+    ? identifier.split("@")[0]!
+    : identifier;
+
+  const parts = base.split(/[._-]+/).filter(Boolean);
+  if (!parts.length) return undefined;
+
+  return parts
+    .map(
+      (p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()
+    )
+    .join(" ");
+}
+
+function domainToCompany(domain?: string): string | undefined {
+  if (!domain) return undefined;
+  const lower = domain.toLowerCase();
+
+  if (PERSONAL_DOMAINS.has(lower)) return undefined;
+
+  const mainPart = lower.split(".")[0] || lower;
+  return mainPart.charAt(0).toUpperCase() + mainPart.slice(1);
+}
+
+function guessCompanyFromTitle(
+  title: string | undefined,
+  fallback?: string
+): string | undefined {
+  if (!title) return fallback;
+
+  // e.g. "Sales Meeting – Salesforce x Walmart"
+  const xMatch = title.split(/x|X/);
+  if (xMatch.length >= 2) {
+    const right = xMatch[xMatch.length - 1]!.trim();
+    if (right) return right.replace(/[-–—]/g, "").trim();
+  }
+
+  // e.g. "Marketing Meeting with Nike"
+  const withMatch = title.match(/with\s+(.+)$/i);
+  if (withMatch?.[1]) {
+    return withMatch[1].trim();
+  }
+
+  return fallback;
+}
+
+function guessRoleFromText(
+  title?: string,
+  description?: string
+): string | undefined {
+  const text = `${title ?? ""} ${description ?? ""}`.toLowerCase();
+
+  if (text.includes("chief marketing officer") || text.includes("cmo")) {
+    return "CMO";
+  }
+  if (text.includes("vp marketing") || text.includes("vice president of marketing")) {
+    return "VP MARKETING";
+  }
+  if (text.includes("head of marketing") || text.includes("director of marketing")) {
+    return "HEAD OF MARKETING";
+  }
+  if (text.includes("growth") || text.includes("demand generation")) {
+    return "GROWTH / DEMAND GENERATION";
+  }
+  if (text.includes("sales") || text.includes("revenue")) {
+    return "SALES / REVENUE LEADER";
+  }
+
   return undefined;
 }
 
-// Fallback: company from email domain, but ignore Gmail/Yahoo/etc.
-function guessCompanyFromDomain(domain?: string): string | undefined {
-  if (!domain) return;
-  const [first] = domain.split(".");
-  if (!first) return;
-  if (EMAIL_PROVIDERS.includes(first.toLowerCase())) return;
-  return first.charAt(0).toUpperCase() + first.slice(1);
-}
-
-function guessRoleFromText(text: string): string | undefined {
-  const patterns = [
-    "CMO",
-    "Chief Marketing Officer",
-    "VP Marketing",
-    "Vice President",
-    "Director of Marketing",
-    "Head of Marketing",
-  ];
-  const lower = text.toLowerCase();
-  return patterns.find((p) => lower.includes(p.toLowerCase()));
-}
-
 export function extractProspect(event: calendar_v3.Schema$Event): Prospect {
-  const attendees = event.attendees || [];
-  const external =
-    attendees.find(
-      (a) => a.email && a.email.toLowerCase() !== SELF_EMAIL.toLowerCase()
-    ) ?? attendees[0];
+  const attendees = event.attendees ?? [];
+  const primary =
+    attendees.find((a) => !a.self) ?? attendees[0] ?? undefined;
 
-  const email = external?.email || "";
-  const emailDomain = email.includes("@") ? email.split("@")[1] : undefined;
+  const email = primary?.email ?? undefined;
+  const emailDomain = email ? email.split("@")[1] : undefined;
 
-  const title = event.summary || "(No title)";
-  const description = event.description || "";
-  const combinedText = `${title}\n${description}`;
+  const fullName =
+    cleanName(primary?.displayName) ||
+    cleanName(email) ||
+    "Unknown";
 
-  const companyFromTitle = guessCompanyFromTitle(title);
-  const companyFromDomain = guessCompanyFromDomain(emailDomain);
+  const meetingTitle = event.summary ?? "";
+  const meetingDescription = event.description ?? undefined;
+  const startTime =
+    event.start?.dateTime ?? event.start?.date ?? "";
 
-  const base: Prospect = {
-    eventId: event.id!,
-    fullName: external?.displayName || email.split("@")[0] || "Unknown",
-    email: email || undefined,
-    companyNameGuess: companyFromTitle ?? companyFromDomain,
-    roleGuess: guessRoleFromText(combinedText),
-    meetingTitle: title,
-    meetingDescription: description || undefined,
-    startTime:
-      event.start?.dateTime || event.start?.date || new Date().toISOString(),
+  const companyFromDomain = domainToCompany(emailDomain);
+  const companyNameGuess = guessCompanyFromTitle(
+    meetingTitle,
+    companyFromDomain
+  );
+
+  const roleGuess = guessRoleFromText(
+    meetingTitle,
+    meetingDescription
+  );
+
+  return {
+    eventId: event.id ?? "",
+    fullName,
+    email,
+    emailDomain,
+    companyNameGuess,
+    roleGuess,
+    meetingTitle,
+    meetingDescription,
+    startTime,
   };
-
-  if (emailDomain) {
-    base.emailDomain = emailDomain;
-  }
-
-  return base;
 }

@@ -21,10 +21,9 @@ export type MeetingPrep = z.infer<typeof MeetingPrepSchema>;
 function parseJsonSafely(raw: string): any {
   let txt = raw.trim();
 
-  // Strip ```json ... ``` fences if the model added them
   if (txt.startsWith("```")) {
-    txt = txt.replace(/^```[a-zA-Z]*\s*/, ""); // remove opening fence + optional lang
-    txt = txt.replace(/```$/, ""); // remove closing fence
+    txt = txt.replace(/^```[a-zA-Z]*\s*/, "");
+    txt = txt.replace(/```$/, "");
   }
 
   try {
@@ -35,7 +34,6 @@ function parseJsonSafely(raw: string): any {
   }
 }
 
-// Turn arrays of strings OR objects into "Heading: detail" strings
 function normSection(val: any): string[] {
   if (!Array.isArray(val)) return [];
 
@@ -46,7 +44,6 @@ function normSection(val: any): string[] {
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
 
-        // Case 1: { title, detail }
         const titleField = obj.title;
         const detailField = obj.detail;
         const hasTitleField =
@@ -62,7 +59,6 @@ function normSection(val: any): string[] {
           if (detail) return detail;
         }
 
-        // Case 2: { "Heading": "detail" } – first key/value pair
         const entries = Object.entries(obj);
         const firstEntry = entries[0] as [string, unknown] | undefined;
 
@@ -100,7 +96,7 @@ export async function generateMeetingPrep(
 
   const parsed: any = parseJsonSafely(raw);
 
-  const bucket = context.prospect.roleGuess; // expected one of your 6 uppercase categories
+  const bucket = context.prospect.roleGuess;
 
   const safe = {
     header: {
@@ -108,7 +104,6 @@ export async function generateMeetingPrep(
         parsed?.header?.name ??
         context.prospect.fullName ??
         "Unknown prospect",
-      // force bucket first; fall back to model only if bucket missing
       roleLine:
         bucket ??
         parsed?.header?.roleLine ??

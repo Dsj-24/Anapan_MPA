@@ -14,14 +14,13 @@ export type InferredRole = {
   isAcceptable: boolean;
 };
 
-// The ONLY 6 possible buckets for roleLine
 const ROLE_BUCKETS = [
-  "CMO",                        // Chief Marketing Officer / similar
-  "VP MARKETING",               // VP / SVP / EVP Marketing
-  "HEAD OF MARKETING",          // Head / Director / Lead of Marketing
-  "GROWTH / DEMAND GENERATION", // Growth / Performance / Demand Gen
-  "SALES / REVENUE LEADER",     // Sales / Revenue / Biz Dev / AE / CS
-  "MARKETING LEADER",           // generic catch‑all for other marketing roles
+  "CMO",
+  "VP MARKETING",
+  "HEAD OF MARKETING",
+  "GROWTH / DEMAND GENERATION",
+  "SALES / REVENUE LEADER",
+  "MARKETING LEADER",
 ] as const;
 
 function mapRoleToBucket(rawRole: string | null): string | null {
@@ -96,9 +95,7 @@ export async function inferRoleFromPerson(
   }
 
   const snippets = person.sources
-    .map(
-      (s, i) => `Source ${i + 1} (URL: ${s.url}):\n${s.snippet}`
-    )
+    .map((s, i) => `Source ${i + 1} (URL: ${s.url}):\n${s.snippet}`)
     .join("\n\n");
 
   const response = await roleModel.invoke([
