@@ -1,12 +1,18 @@
 import express, {} from "express";
 import util from "util";
-import { listUpcomingEvents } from "./calendar/gcc.js";
+import { inArray } from "drizzle-orm";
+import { listUpcomingEventsForUser, getEventById, getFallbackRefreshToken, } from "./calendar/gcc.js";
 import { extractProspect } from "./prospect/extractProspect.js";
 import { buildResearchContext } from "./research/researchContext.js";
 import { generateMeetingPrep } from "./llm/generateMeetPrep.js";
 import { getOrCreateMeetingPrepForEvent } from "./llm/getOrCreatePrep.js";
+import { upsertUserRefreshToken, getRefreshTokenForUser, } from "./auth/tokenStore.js";
+import { db } from "./db/drizzle.js";
+import { meetingPrep } from "./db/schema.js";
+import { PORT } from "./config/env.js";
 const app = express();
 app.set("json spaces", 2);
+app.use(express.json());
 function isMarketingUseCase(prospect) {
     const title = (prospect.meetingTitle || "").toLowerCase();
     const description = (prospect.meetingDescription || "").toLowerCase();
@@ -16,23 +22,98 @@ function isMarketingUseCase(prospect) {
         description.includes("marketing");
     return hasKeyword;
 }
+const CALENDAR_LOOKAHEAD_LIMIT = 20;
+const DASHBOARD_LIMIT = 6;
+function normalizeEmail(raw) {
+    return raw?.trim().toLowerCase();
+}
+function requireUserEmail(req) {
+    const email = normalizeEmail(req.header("x-user-email"));
+    if (!email) {
+        throw Object.assign(new Error("MISSING_EMAIL"), { code: "MISSING_EMAIL" });
+    }
+    return email;
+}
+// STRICT: per-user calendar only. No fallback here.
+async function requireRefreshTokenForEmail(email) {
+    const row = await getRefreshTokenForUser(email);
+    if (row?.refreshToken) {
+        return row.refreshToken;
+    }
+    throw Object.assign(new Error("NO_REFRESH_TOKEN"), {
+        code: "NO_REFRESH_TOKEN",
+    });
+}
+async function listMarketingEvents(refreshToken) {
+    const events = await listUpcomingEventsForUser(refreshToken, CALENDAR_LOOKAHEAD_LIMIT);
+    const pairs = events
+        .map((event) => {
+        const prospect = extractProspect(event);
+        return { event, prospect };
+    })
+        .filter((pair) => Boolean(pair.prospect && pair.prospect.startTime))
+        .filter(({ prospect }) => isMarketingUseCase(prospect));
+    return pairs;
+}
+async function getEventForUser(refreshToken, eventId) {
+    return getEventById(refreshToken, eventId);
+}
+/**
+ * Debug route using ONLY the global fallback token, if configured.
+ * This is for your own testing; it is NOT used by the main app flow.
+ */
 app.get("/", async (_req, res) => {
-    const events = await listUpcomingEvents();
+    const fallback = getFallbackRefreshToken();
+    if (!fallback) {
+        return res
+            .status(400)
+            .json({ error: "No fallback refresh token configured for debug route." });
+    }
+    const events = await listUpcomingEventsForUser(fallback, 10);
     const prospects = events.map(extractProspect);
-    // print prospect names to console
     prospects.forEach((p) => {
         console.log("Prospect:", p.fullName);
         console.log("Organization:", p.companyNameGuess);
         console.log("Role:", p.roleGuess);
     });
     res.json({
-        message: "Hehe",
+        message: "Debug prospect extraction",
         prospects,
     });
 });
+/**
+ * Called from NextAuth signIn callback to store per‑user refresh tokens.
+ */
+app.post("/auth/google-token", async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const refreshToken = req.body?.refreshToken;
+    if (!email || !refreshToken) {
+        return res
+            .status(400)
+            .json({ error: "Both email and refreshToken are required." });
+    }
+    try {
+        await upsertUserRefreshToken({ email, refreshToken });
+        res.json({ stored: true });
+    }
+    catch (err) {
+        console.error("Error upserting user refresh token", err);
+        res.status(500).json({ error: "Failed to store refresh token" });
+    }
+});
+/**
+ * Debug: use fallback token to get first upcoming event and generate prep.
+ */
 app.get("/prep", async (_req, res) => {
     try {
-        const events = await listUpcomingEvents();
+        const fallback = getFallbackRefreshToken();
+        if (!fallback) {
+            return res
+                .status(400)
+                .type("text/plain")
+                .send("No fallback refresh token configured\n");
+        }
+        const events = await listUpcomingEventsForUser(fallback, 5);
         if (!events.length) {
             return res
                 .status(404)
@@ -43,7 +124,6 @@ app.get("/prep", async (_req, res) => {
         if (!event) {
             return res.status(404).type("text/plain").send("No event found\n");
         }
-        // Uses Drizzle-backed cache; calls generateMeetingPrep inside if needed
         const { prep, context } = await getOrCreateMeetingPrepForEvent(event);
         const text = "Prospect: " +
             util.inspect(context.prospect, { depth: null, colors: false }) +
@@ -61,12 +141,24 @@ app.get("/prep", async (_req, res) => {
             .send("Failed to generate meeting prep\n");
     }
 });
+/**
+ * Debug: one event via fallback.
+ */
 app.get("/debug/prep/:eventId", async (req, res) => {
     try {
-        const events = await listUpcomingEvents();
-        const event = events.find((e) => e.id === req.params.eventId);
+        const fallback = getFallbackRefreshToken();
+        if (!fallback) {
+            return res
+                .status(400)
+                .json({ error: "No fallback refresh token configured for debug route." });
+        }
+        const eventId = req.params.eventId;
+        if (!eventId) {
+            return res.status(400).json({ error: "Missing event id." });
+        }
+        const event = await getEventForUser(fallback, eventId);
         if (!event) {
-            return res.status(404).json({ error: "Event not found in upcoming list" });
+            return res.status(404).json({ error: "Event not found" });
         }
         const { prep, context } = await getOrCreateMeetingPrepForEvent(event);
         res.json({ prospect: context.prospect, context, prep });
@@ -76,50 +168,112 @@ app.get("/debug/prep/:eventId", async (req, res) => {
         res.status(500).json({ error: "Failed to generate meeting prep" });
     }
 });
-app.get("/preps", async (_req, res) => {
+/**
+ * Main dashboard endpoint: per‑user meetings.
+ * Uses only that user's stored refresh token.
+ */
+app.get("/preps", async (req, res) => {
     try {
-        const events = await listUpcomingEvents();
-        if (!events.length) {
-            return res
-                .status(404)
-                .json({ error: "No upcoming events found" });
-        }
-        const withProspects = events
-            .filter((e) => !!e.id)
-            .map((event) => ({
-            event,
-            prospect: extractProspect(event),
+        const email = requireUserEmail(req);
+        const refreshToken = await requireRefreshTokenForEmail(email);
+        const events = await listMarketingEvents(refreshToken);
+        const limited = events
+            .filter(({ event }) => !!event.id)
+            .sort((a, b) => new Date(a.prospect.startTime).getTime() -
+            new Date(b.prospect.startTime).getTime())
+            .slice(0, DASHBOARD_LIMIT);
+        const eventIds = limited
+            .map(({ event }) => event.id)
+            .filter((id) => Boolean(id));
+        const existingPreps = eventIds.length
+            ? await db
+                .select({ eventId: meetingPrep.eventId })
+                .from(meetingPrep)
+                .where(inArray(meetingPrep.eventId, eventIds))
+            : [];
+        const readySet = new Set(existingPreps.map((row) => row.eventId));
+        const meetings = limited.map(({ event, prospect }) => ({
+            eventId: event.id,
+            startTime: prospect.startTime,
+            meetingTitle: prospect.meetingTitle,
+            prospect,
+            prepStatus: readySet.has(event.id) ? "ready" : "pending",
         }));
-        // filter to marketing / sales use case
-        const marketing = withProspects.filter(({ prospect }) => isMarketingUseCase(prospect));
-        // sort by start time and take top 5
-        const top5 = marketing
-            .sort((a, b) => {
-            const tA = new Date(a.prospect.startTime).getTime();
-            const tB = new Date(b.prospect.startTime).getTime();
-            return tA - tB;
-        })
-            .slice(0, 5);
-        const results = await Promise.all(top5.map(async ({ event, prospect }) => {
-            const { prep, context } = await getOrCreateMeetingPrepForEvent(event);
-            return {
-                eventId: event.id,
-                startTime: prospect.startTime,
-                meetingTitle: prospect.meetingTitle,
-                prospect: context.prospect,
-                prep,
-            };
-        }));
-        res.json({ meetings: results });
+        res.json({
+            meetings,
+            recommendation: meetings.length === 0
+                ? 'You have no upcoming Sales/Marketing meetings. Create one in Google Calendar with "Sales" or "Marketing" in the title to see it here.'
+                : undefined,
+        });
     }
     catch (err) {
+        if (err.code === "MISSING_EMAIL") {
+            return res.status(400).json({ error: "Missing user email header." });
+        }
+        if (err.code === "NO_REFRESH_TOKEN") {
+            // User has never granted Calendar access → no meetings instead of using someone else's token
+            return res.json({
+                meetings: [],
+                recommendation: "We couldn’t access your Google Calendar. Please re‑sign in and accept the calendar permission.",
+            });
+        }
         console.error("Error in /preps:", err);
         res.status(500).json({ error: "Failed to generate meeting preps" });
     }
 });
+/**
+ * Detail endpoint – generate & return prep for a specific event.
+ * Again, strictly per user.
+ */
+app.get("/meetings/:eventId/prep", async (req, res) => {
+    try {
+        const email = requireUserEmail(req);
+        const refreshToken = await requireRefreshTokenForEmail(email);
+        const eventId = req.params.eventId;
+        if (!eventId) {
+            return res.status(400).json({ error: "Missing event id." });
+        }
+        const event = await getEventForUser(refreshToken, eventId);
+        if (!event) {
+            return res
+                .status(404)
+                .json({ error: "Event not found or no longer upcoming." });
+        }
+        const { prep, context } = await getOrCreateMeetingPrepForEvent(event);
+        const startTime = context.prospect.startTime || event.start?.dateTime || "";
+        res.json({
+            eventId: event.id,
+            meetingTitle: context.prospect.meetingTitle,
+            startTime,
+            prospect: context.prospect,
+            prep,
+        });
+    }
+    catch (err) {
+        if (err.code === "MISSING_EMAIL") {
+            return res.status(400).json({ error: "Missing user email header." });
+        }
+        if (err.code === "NO_REFRESH_TOKEN") {
+            return res.status(403).json({
+                error: "Google Calendar access not granted for this user. Please re‑connect.",
+            });
+        }
+        console.error("Error in /meetings/:eventId/prep:", err);
+        res.status(500).json({ error: "Failed to generate meeting prep" });
+    }
+});
+/**
+ * Debug: first upcoming event via fallback, through full research pipeline.
+ */
 app.get("/debug/prep", async (_req, res) => {
     try {
-        const events = await listUpcomingEvents();
+        const fallback = getFallbackRefreshToken();
+        if (!fallback) {
+            return res.status(400).json({
+                error: "No fallback refresh token configured for debug route.",
+            });
+        }
+        const events = await listUpcomingEventsForUser(fallback, 5);
         if (!events.length) {
             return res.status(404).json({ error: "No upcoming events found" });
         }
@@ -148,6 +302,7 @@ app.get("/debug/prep", async (_req, res) => {
         res.status(500).json({ error: "Failed to generate meeting prep" });
     }
 });
-app.listen(3001);
-console.log("HAHA");
+app.listen(PORT, () => {
+    console.log(`Backend running on port ${PORT}`);
+});
 //# sourceMappingURL=index.js.map

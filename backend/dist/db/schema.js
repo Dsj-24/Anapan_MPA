@@ -16,4 +16,14 @@ export const meetingPrep = pgTable("meeting_prep", {
         .defaultNow()
         .notNull(),
 });
+export const userTokens = pgTable("user_tokens", {
+    email: text("email").primaryKey(),
+    refreshToken: text("refresh_token").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+        .defaultNow()
+        .notNull(),
+});
 //# sourceMappingURL=schema.js.map

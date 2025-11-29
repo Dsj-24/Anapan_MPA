@@ -5,11 +5,11 @@ const required = [
     "TAVILY_API_KEY",
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
-    "GOOGLE_REFRESH_TOKEN",
 ];
+const optional = new Set(["GOOGLE_REFRESH_TOKEN"]);
 // In case any Key is missing
 required.forEach((key) => {
-    if (!process.env[key]) {
+    if (!process.env[key] && !optional.has(key)) {
         throw new Error(`Missing required env var: ${key}`);
     }
 });
