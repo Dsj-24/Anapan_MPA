@@ -2,8 +2,21 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { 
+  ArrowLeft, 
+  Calendar, 
+  Clock, 
+  User, 
+  Building2, 
+  Mail,
+  AlertTriangle,
+  MessageSquare,
+  Compass,
+  Lightbulb,
+  Headphones
+} from "lucide-react";
 import { authOptions } from "../../../src/lib/auth";
-import { fetchPreps, type MeetingSummary } from "../../../src/lib/api";
+import { fetchMeetingPrep } from "../../../src/lib/api";
 
 export default async function MeetingDetailPage({
   params,
@@ -13,57 +26,60 @@ export default async function MeetingDetailPage({
   const { eventId } = await params;
 
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session || !session.user?.email) {
     redirect("/");
   }
 
-  let meetings: MeetingSummary[];
+  let detail;
   try {
-    meetings = await fetchPreps();
-  } catch {
+    detail = await fetchMeetingPrep(session.user.email, eventId);
+  } catch (err) {
+    console.error("Meeting detail error", err);
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p className="text-slate-600">
-          Could not load meeting prep. Make sure the backend is running and
-          /preps is healthy.
-        </p>
+      <main className="min-h-screen flex items-center justify-center bg-white px-6">
+        <div className="text-center max-w-md">
+          <div className="rounded-2xl bg-red-50 p-6 mb-4 inline-block">
+            <AlertTriangle className="w-12 h-12 text-red-600" />
+          </div>
+          <p className="text-slate-700 leading-relaxed">
+            We couldn&apos;t generate the meeting prep right now. Please ensure the
+            backend is running and the meeting still exists in your calendar.
+          </p>
+        </div>
       </main>
     );
   }
 
-  const meeting = meetings.find((m) => m.eventId === eventId);
-
-  if (!meeting) {
+  if (!detail) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-50">
+      <main className="min-h-screen flex items-center justify-center bg-white">
         <p className="text-slate-600">Meeting not found.</p>
       </main>
     );
   }
 
-  const { header, painPoints, talkingPoints, approach, tips, toneSummary } =
-    meeting.prep;
-  const { prospect } = meeting;
-  const when = new Date(meeting.startTime);
+  const { prep, prospect, meetingTitle, startTime } = detail;
+  const when = new Date(startTime);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="w-full max-w-4xl mx-auto px-6 py-6">
+    <main className="min-h-screen bg-white">
+      <div className="w-full max-w-5xl mx-auto px-6 py-8">
         <Link
           href="/preps"
-          className="text-sm text-blue-600 hover:underline mb-6 inline-flex items-center"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 mb-8 group transition-colors"
         >
-          ← Back to Dashboard
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          Back to Dashboard
         </Link>
 
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">
-              {meeting.meetingTitle}
+            <h1 className="text-3xl font-bold text-slate-900 mb-4">
+              {meetingTitle}
             </h1>
-            <div className="flex items-center gap-3 text-sm text-slate-600">
-              <span className="flex items-center gap-1.5">
-                📅{" "}
+            <div className="flex items-center gap-4 text-sm text-slate-600">
+              <span className="flex items-center gap-2 font-medium">
+                <Calendar className="w-4 h-4 text-blue-600" />
                 {when.toLocaleDateString(undefined, {
                   weekday: "long",
                   month: "long",
@@ -71,9 +87,9 @@ export default async function MeetingDetailPage({
                   year: "numeric",
                 })}
               </span>
-              <span>•</span>
-              <span className="flex items-center gap-1.5">
-                🕐{" "}
+              <span className="text-slate-300">•</span>
+              <span className="flex items-center gap-2 font-medium">
+                <Clock className="w-4 h-4 text-blue-600" />
                 {when.toLocaleTimeString(undefined, {
                   hour: "numeric",
                   minute: "2-digit",
@@ -81,103 +97,126 @@ export default async function MeetingDetailPage({
               </span>
             </div>
           </div>
-          <span className="inline-flex px-3 py-1 rounded-full bg-slate-100 text-xs font-medium text-slate-700">
+          <span className="inline-flex px-4 py-2 rounded-lg bg-blue-50 text-sm font-semibold text-blue-700 border border-blue-100">
             Upcoming
           </span>
         </div>
 
-        {/* Prospect header card */}
         <section className="mb-6 rounded-xl bg-blue-50 border border-blue-100 p-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">
-            {header.name}
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">
+            {prep.header.name}
           </h2>
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-slate-700">
-              <span className="text-slate-500">👤</span>
-              <span>{header.roleLine}</span>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 text-slate-700">
+              <User className="w-5 h-5 text-blue-600" />
+              <span className="font-medium">{prep.header.roleLine}</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-700">
-              <span className="text-slate-500">🏢</span>
-              <span>{header.company}</span>
+            <div className="flex items-center gap-3 text-slate-700">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              <span className="font-medium">{prep.header.company}</span>
             </div>
             {prospect.email && (
-              <div className="flex items-center gap-2 text-sm text-slate-600 mt-2">
-                <span className="text-slate-500">✉️</span>
-                <span>{prospect.email}</span>
+              <div className="flex items-center gap-3 text-sm text-slate-600 mt-3">
+                <Mail className="w-5 h-5 text-blue-600" />
+                <span className="font-medium">{prospect.email}</span>
               </div>
             )}
           </div>
         </section>
 
-        <PrepSection title="Pain Points" icon="⚠️" items={painPoints} iconColor="text-red-500" />
+        <PrepSection 
+          title="Pain Points" 
+          icon={<AlertTriangle className="w-6 h-6" />}
+          items={prep.painPoints}
+          color="red"
+        />
         <PrepSection
           title="Talking Points"
-          icon="💬"
-          items={talkingPoints}
-          iconColor="text-blue-500"
+          icon={<MessageSquare className="w-6 h-6" />}
+          items={prep.talkingPoints}
+          color="blue"
         />
         <PrepSection 
           title="Approach Strategy" 
-          icon="🎯" 
-          items={approach}
-          iconColor="text-blue-500"
+          icon={<Compass className="w-6 h-6" />}
+          items={prep.approach}
+          color="purple"
         />
-        <PrepSection title="Tips for Success" icon="💡" items={tips} iconColor="text-yellow-500" />
+        <PrepSection 
+          title="Tips for Success" 
+          icon={<Lightbulb className="w-6 h-6" />}
+          items={prep.tips}
+          color="amber"
+        />
 
-        <section className="mt-6 rounded-xl bg-white border border-slate-100 shadow-sm p-6">
-          <h3 className="flex items-center gap-2 font-semibold text-slate-900 mb-3">
-            <span className="text-blue-500">🔊</span>
+        <section className="mt-6 rounded-xl bg-white border border-slate-200 shadow-sm p-6">
+          <h3 className="flex items-center gap-3 font-semibold text-lg text-slate-900 mb-4">
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-green-600 text-white">
+              <Headphones className="w-5 h-5" />
+            </div>
             <span>Tone & Style</span>
           </h3>
-          <p className="text-sm text-slate-700 italic leading-relaxed">{toneSummary}</p>
+          <p className="text-slate-700 italic leading-relaxed bg-slate-50 rounded-lg p-4">
+            {prep.toneSummary}
+          </p>
         </section>
       </div>
     </main>
   );
 }
 
-function PrepSection({ 
-  title, 
-  icon, 
-  items, 
-  iconColor = "text-slate-500" 
-}: { 
-  title: string; 
-  icon: string; 
+function PrepSection({
+  title,
+  icon,
+  items,
+  color,
+}: {
+  title: string;
+  icon: React.ReactNode;
   items: string[];
-  iconColor?: string;
+  color: string;
 }) {
+  const colorClasses = {
+    red: "bg-red-600",
+    blue: "bg-blue-600",
+    purple: "bg-purple-600",
+    amber: "bg-amber-600",
+  };
+
   return (
-    <section className="mb-6 rounded-xl bg-white border border-slate-100 shadow-sm p-6">
-      <h3 className="flex items-center gap-3 font-bold text-lg text-slate-900 mb-5">
-        <span className={`${iconColor} text-2xl`}>{icon}</span>
+    <section className="mb-6 rounded-xl bg-white border border-slate-200 shadow-sm p-6">
+      <h3 className="flex items-center gap-3 font-semibold text-lg text-slate-900 mb-6">
+        <div className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${colorClasses[color as keyof typeof colorClasses]} text-white shadow-sm`}>
+          {icon}
+        </div>
         <span>{title}</span>
       </h3>
-      <ul className="space-y-4">
+      <ul className="space-y-5">
         {items.map((item, idx) => {
-          // Split on first colon to separate heading from content
-          const colonIndex = item.indexOf(':');
+          const colonIndex = item.indexOf(":");
           if (colonIndex === -1) {
-            // No colon found, render as regular item
             return (
-              <li key={idx} className="flex items-start gap-3 text-sm text-slate-700">
-                <span className="text-slate-400 mt-0.5">•</span>
+              <li
+                key={idx}
+                className="flex items-start gap-3 text-slate-700"
+              >
+                <span className="text-blue-500 mt-1 font-bold">•</span>
                 <span className="flex-1 leading-relaxed">{item}</span>
               </li>
             );
           }
-          
+
           const heading = item.substring(0, colonIndex).trim();
           const content = item.substring(colonIndex + 1).trim();
-          
+
           return (
             <li key={idx} className="flex items-start gap-3">
-              <span className="text-slate-400 mt-1">•</span>
+              <span className="text-blue-500 mt-1.5 font-bold">•</span>
               <div className="flex-1">
-                <h4 className="text-sm font-semibold text-slate-900 mb-1">
+                <h4 className="font-semibold text-slate-900 mb-2">
                   {heading}
                 </h4>
-                <p className="text-sm text-slate-700 leading-relaxed">
+                <p className="text-slate-700 leading-relaxed">
                   {content}
                 </p>
               </div>

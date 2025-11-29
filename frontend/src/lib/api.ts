@@ -1,7 +1,6 @@
 // src/lib/api.ts
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL!;
 
-// Types aligned with your backend
 export type MeetingPrep = {
   header: {
     name: string;
@@ -32,13 +31,31 @@ export type MeetingSummary = {
   startTime: string;
   meetingTitle: string;
   prospect: Prospect;
+  prepStatus: "ready" | "pending";
+};
+
+export type MeetingsResponse = {
+  meetings: MeetingSummary[];
+  recommendation?: string;
+};
+
+export type MeetingPrepDetail = {
+  eventId: string;
+  meetingTitle: string;
+  startTime: string;
+  prospect: Prospect;
   prep: MeetingPrep;
 };
 
-export async function fetchPreps(): Promise<MeetingSummary[]> {
+export async function fetchPreps(
+  email: string
+): Promise<MeetingsResponse> {
   const res = await fetch(`${backendBaseUrl}/preps`, {
     method: "GET",
     cache: "no-store",
+    headers: {
+      "x-user-email": email,
+    },
   });
 
   if (!res.ok) {
@@ -47,6 +64,30 @@ export async function fetchPreps(): Promise<MeetingSummary[]> {
     );
   }
 
-  const data = (await res.json()) as { meetings?: MeetingSummary[] };
-  return data.meetings ?? [];
+  const data = (await res.json()) as MeetingsResponse;
+  return {
+    meetings: data.meetings ?? [],
+    recommendation: data.recommendation,
+  };
+}
+
+export async function fetchMeetingPrep(
+  email: string,
+  eventId: string
+): Promise<MeetingPrepDetail> {
+  const res = await fetch(`${backendBaseUrl}/meetings/${eventId}/prep`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      "x-user-email": email,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Backend /meetings/${eventId}/prep failed with ${res.status} ${res.statusText}`
+    );
+  }
+
+  return (await res.json()) as MeetingPrepDetail;
 }
