@@ -1,0 +1,1 @@
+{"version":3,"file":"classifyCompany.d.ts","sourceRoot":"","sources":["../../src/research/classifyCompany.ts"],"names":[],"mappings":"AAUA,MAAM,MAAM,qBAAqB,GAAG;IAClC,IAAI,CAAC,EAAE,MAAM,CAAC;IACd,QAAQ,EAAE,MAAM,CAAC;IACjB,SAAS,CAAC,EAAE,YAAY,GAAG,WAAW,GAAG,SAAS,CAAC;CACpD,CAAC;AAEF,wBAAsB,eAAe,CACnC,QAAQ,EAAE,MAAM,EAAE,GACjB,OAAO,CAAC,qBAAqB,CAAC,CA4ChC"}
