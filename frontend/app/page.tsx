@@ -1,65 +1,104 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useSession, signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+export default function LandingPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push("/preps");
+    }
+  }, [status, router]);
+
+  if (status === "loading") {
+    return null;
+  }
+
+  if (status === "authenticated") {
+    return null;
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen flex flex-col items-center bg-slate-50">
+      <header className="w-full max-w-5xl flex items-center justify-between py-6 px-6">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white font-semibold">
+            📅
+          </span>
+          <span className="font-semibold text-slate-900">
+            Meeting Prep Assistant
+          </span>
+        </div>
+        <button
+          onClick={() => signIn("google")}
+          className="px-4 py-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-sm hover:bg-slate-50"
+        >
+          Sign in with Google
+        </button>
+      </header>
+
+      <section className="flex-1 w-full max-w-5xl flex flex-col items-center px-6 pb-16">
+        <div className="text-center mt-16 max-w-2xl">
+          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+            Never Walk Into a Meeting Unprepared
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-slate-600 mb-8">
+            AI-powered meeting intelligence that syncs with your Google
+            Calendar and delivers comprehensive prospect research before every
+            call.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => signIn("google")}
+            className="px-6 py-3 rounded-md bg-blue-600 text-white font-semibold shadow hover:bg-blue-700"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            Get Started with Google
+          </button>
         </div>
-      </main>
+
+        <div className="mt-16 grid gap-6 md:grid-cols-2 w-full">
+          <FeatureCard
+            icon="📅"
+            title="Auto-Sync Calendar"
+            body="Automatically syncs with your Google Calendar to identify upcoming Sales /Marketing meetings and prospects."
+          />
+          <FeatureCard
+            icon="👥"
+            title="Prospect Research"
+            body="Get comprehensive insights about who you're meeting, their role, company, and pain points."
+          />
+          <FeatureCard
+            icon="🗣️"
+            title="Talking Points"
+            body="Receive tailored talking points and approach strategies for each prospect."
+          />
+          <FeatureCard
+            icon="⚡"
+            title="Before Time Prep"
+            body="Get meeting prep delivered right before your calls, so you're always prepared."
+          />
+        </div>
+      </section>
+
+      <footer className="w-full py-6 text-center text-xs text-slate-500">
+        © {new Date().getFullYear()} Meeting Prep Assistant. Built for sales
+        professionals.
+      </footer>
+    </main>
+  );
+}
+
+function FeatureCard({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl bg-white px-6 py-5 shadow-sm border border-slate-100">
+      <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-2xl">
+        {icon}
+      </div>
+      <h2 className="font-semibold text-slate-900 mb-2">{title}</h2>
+      <p className="text-sm text-slate-600">{body}</p>
     </div>
   );
 }
