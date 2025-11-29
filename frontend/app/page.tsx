@@ -37,7 +37,7 @@ export default function LandingPage() {
           onClick={() => signIn("google")}
           className="px-4 py-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-sm hover:bg-slate-50"
         >
-          Sign in with Google
+          Press Middle Button
         </button>
       </header>
 
